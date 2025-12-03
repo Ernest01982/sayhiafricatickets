@@ -1,8 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Credentials provided by the user
-const supabaseUrl = 'https://illeefvnyyilddhhwooz.supabase.co';
-const supabaseKey = 'sb_publishable_PAS97Wt1l9gDXyCsb8NWaQ_y_EwfAGn';
+// Prefer environment variables so deployers can supply their own Supabase project.
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error(
+    'Supabase credentials are missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env.local file.',
+  );
+}
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
