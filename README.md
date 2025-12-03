@@ -195,10 +195,3 @@ grant usage on schema public to anon, authenticated;
 4. Send any message. The frontend now calls `POST /chat`, which forwards the request to Gemini and Supabase and streams the response back.
 
 If the backend is offline or missing credentials, the simulator will surface the exact error message instead of silently failing.
-
----
-
-## Troubleshooting Connection Errors
-
-- **`net::ERR_CONNECTION_REFUSED` in the simulator** – The frontend calls your local backend at `VITE_BACKEND_URL` (defaults to `http://localhost:3000`). Start the backend with `npm run dev:backend` (or `npm start` inside `backend/`) and keep the URL pointed to the backend, not to Gemini.
-- **Frontend hangs while chatting** – Make sure `backend/.env` has your Gemini API key (`API_KEY`) and that the server log shows `Server is running on port 3000`.
