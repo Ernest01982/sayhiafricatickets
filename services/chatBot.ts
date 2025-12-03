@@ -54,7 +54,21 @@ export const processUserMessage = async (userMessage: string): Promise<string> =
     if (error?.name === 'AbortError') {
       throw new Error('Connection to agent timed out.');
     }
-    throw new Error(error?.message || 'Failed to reach AI agent.');
+
+    const message = error?.message || '';
+    const isNetworkRefused =
+      error?.name === 'TypeError' ||
+      message.toLowerCase().includes('failed to fetch') ||
+      message.toLowerCase().includes('networkerror') ||
+      message.toLowerCase().includes('connection refused');
+
+    if (isNetworkRefused) {
+      throw new Error(
+        `Cannot reach the agent service. Please start the backend on ${API_BASE_URL} and keep VITE_BACKEND_URL pointed there.`
+      );
+    }
+
+    throw new Error(message || 'Failed to reach AI agent.');
   } finally {
     clearTimeout(timeout);
   }
