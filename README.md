@@ -21,10 +21,13 @@ Say HI Africa is a WhatsApp-first ticketing suite for African event promoters. T
    ```
 2. **Environment variables** – copy `.env.local` and add your keys:
    ```env
+   VITE_SUPABASE_URL=https://your-project-id.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
    GEMINI_API_KEY=YOUR_GEMINI_BROWSER_KEY
    VITE_BACKEND_URL=http://localhost:3000
    ```
-   `VITE_BACKEND_URL` should point at the Express server so the WhatsApp simulator can talk to the real agent.
+   `VITE_BACKEND_URL` should point at the Express server so the WhatsApp simulator can talk to the real agent. The Supabase
+   values must come from **Project Settings → API** so auth and profile calls use valid credentials instead of the demo defaults.
 3. **Run the dev server**
    ```bash
    npm run dev
@@ -174,6 +177,11 @@ alter table orders enable row level security;
 
 create policy "Public Read Events" on events for select using (true);
 create policy "Public Read Ticket Types" on ticket_types for select using (true);
+
+-- Allow authenticated users to create/select their own profiles
+create policy "Manage own profile" on profiles
+  for all using (auth.uid() = id) with check (auth.uid() = id);
+grant usage on schema public to anon, authenticated;
 ```
 
 ---
