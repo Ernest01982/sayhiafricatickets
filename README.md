@@ -19,15 +19,14 @@ Say HI Africa is a WhatsApp-first ticketing suite for African event promoters. T
    ```bash
    npm install
    ```
-2. **Environment variables** – copy `.env.local` and add your keys:
+2. **Environment variables** – copy `.env.local.example` and add your keys:
    ```env
    VITE_SUPABASE_URL=https://your-project-id.supabase.co
    VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
    GEMINI_API_KEY=YOUR_GEMINI_BROWSER_KEY
    VITE_BACKEND_URL=http://localhost:3000
    ```
-   `VITE_BACKEND_URL` should point at the Express server so the WhatsApp simulator can talk to the real agent. The Supabase
-   values must come from **Project Settings → API** so auth and profile calls use valid credentials instead of the demo defaults.
+
 3. **Run the dev server**
    ```bash
    npm run dev
@@ -43,16 +42,17 @@ Say HI Africa is a WhatsApp-first ticketing suite for African event promoters. T
    cd backend
    npm install
    ```
-2. **Create `backend/.env`**
+2. **Create `backend/.env` (you can start from `backend/.env.example`)**
    ```env
    PORT=3000
+   API_KEY=your-google-genai-api-key
 
    # Supabase (Project Settings → API)
    SUPABASE_URL=https://your-project-id.supabase.co
    SUPABASE_SERVICE_KEY=your-service-role-secret-key
 
    # Gemini (https://aistudio.google.com/)
-   API_KEY=your-gemini-api-key
+   # Use your own Google account's API key; do not commit real keys.
 
    # Optional – WhatsApp Cloud API creds
    VERIFY_TOKEN=my_secure_verify_token
@@ -188,8 +188,9 @@ grant usage on schema public to anon, authenticated;
 
 ## Testing the AI Agent (Simulator)
 
-1. Start the backend (`npm start` inside `backend/`).
-2. Run the frontend (`npm run dev` in the project root).
+1. Start both servers together with `npm run dev:full` (starts Vite + backend dev server), or start individually:
+   - Backend: `npm start` inside `backend/`
+   - Frontend: `npm run dev` in the project root
 3. Log in as Admin and launch **WhatsApp Simulator**.
 4. Send any message. The frontend now calls `POST /chat`, which forwards the request to Gemini and Supabase and streams the response back.
 
