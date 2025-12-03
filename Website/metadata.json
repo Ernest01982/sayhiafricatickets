@@ -1,7 +1,0 @@
-{
-  "name": "Say HI Africa",
-  "description": "The only WhatsApp-native ticketing partner in Africa. Sell tickets, send QR codes, and handle support directly in WhatsApp.",
-  "requestFramePermissions": [
-    "camera"
-  ]
-}
