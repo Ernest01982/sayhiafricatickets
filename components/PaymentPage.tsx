@@ -97,16 +97,17 @@ export const PaymentPage: React.FC<PaymentPageProps> = ({ onBack }) => {
           {/* PayFast Form */}
           <form action="https://sandbox.payfast.co.za/eng/process" method="post">
             {/* Merchant Details */}
-            <input type="hidden" name="merchant_id" value="10004002" />
-            <input type="hidden" name="merchant_key" value="q1cd2rdny4a53" />
+            <input type="hidden" name="merchant_id" value={import.meta.env.VITE_PAYFAST_MERCHANT_ID || '10004002'} />
+            <input type="hidden" name="merchant_key" value={import.meta.env.VITE_PAYFAST_MERCHANT_KEY || 'q1cd2rdny4a53'} />
             
             {/* Transaction Details */}
-            <input type="hidden" name="return_url" value={`${window.location.origin}/pay?payment=success&name=${encodeURIComponent(params.name)}`} />
+            <input type="hidden" name="return_url" value={`${window.location.origin}/pay?payment=success&name=${encodeURIComponent(params.name)}&email=${encodeURIComponent(new URLSearchParams(window.location.search).get('email') || '')}`} />
             <input type="hidden" name="cancel_url" value={`${window.location.origin}/pay?payment=cancel`} />
             <input type="hidden" name="notify_url" value={`https://illeefvnyyilddhhwooz.functions.supabase.co/payfast-notify`} />
             
             <input type="hidden" name="amount" value={params.amt} />
             <input type="hidden" name="item_name" value={`Ticket Order #${params.ref}`} />
+            <input type="hidden" name="email_address" value={new URLSearchParams(window.location.search).get('email') || ''} />
             
             <button 
               type="submit"

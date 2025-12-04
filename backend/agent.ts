@@ -58,9 +58,10 @@ const generatePaymentLinkDeclaration: FunctionDeclaration = {
       eventName: { type: Type.STRING, description: 'Name of the event.' },
       ticketType: { type: Type.STRING, description: 'Type of ticket (e.g., VIP, General).' },
       quantity: { type: Type.NUMBER, description: 'Number of tickets.' },
-      customerName: { type: Type.STRING, description: 'Customer full name for the invoice.' }
+      customerName: { type: Type.STRING, description: 'Customer full name for the invoice.' },
+      customerEmail: { type: Type.STRING, description: 'Customer email for invoice/receipt.' }
     },
-    required: ['eventName', 'ticketType', 'quantity', 'customerName']
+    required: ['eventName', 'ticketType', 'quantity', 'customerName', 'customerEmail']
   }
 };
 
@@ -125,13 +126,8 @@ async function searchEvents(query?: string) {
   
   // Format the output clearly for the LLM
   return data.map((event: any, index: number) => {
-    const types = event?.ticket_types as TicketTypeRow[] | null;
-    const statusLabel = event?.status && event.status !== 'PUBLISHED' ? ` [${event.status}]` : '';
-    const typeLines = Array.isArray(types) && types.length > 0
-      ? types.map((t) => `   - ${t.name}: R${t.price}`).join('\n')
-      : '   - Standard: R100';
-    return `${index + 1}. ${event.title} (${event.date})${statusLabel}\n${typeLines}`;
-  }).join('\n\n');
+    return `${index + 1}. ${event.title} (${event.date})`;
+  }).join('\n');
 }
 
 const fetchEventWithTickets = async (eventName: string) => {
@@ -153,6 +149,7 @@ const createOrder = async (args: {
   ticketType: string;
   phone?: string;
   customerName?: string;
+  customerEmail?: string;
 }) => {
   if (!supabase) return null;
   const { data, error } = await supabase
@@ -160,7 +157,7 @@ const createOrder = async (args: {
     .insert({
       event_id: args.eventId,
       customer_name: args.customerName || 'WhatsApp User',
-      customer_email: 'whatsapp@sayhi.africa',
+      customer_email: args.customerEmail || 'whatsapp@sayhi.africa',
       customer_phone: args.phone || 'unknown',
       total_amount: args.total,
       status: 'PENDING',
@@ -181,7 +178,7 @@ const buildPayfastLink = (params: Record<string, string>) => {
   return `https://sandbox.payfast.co.za/eng/process?${search.toString()}`;
 };
 
-async function generatePaymentLink(eventName: string, ticketType: string, quantity: number, userPhone?: string, customerName?: string) {
+async function generatePaymentLink(eventName: string, ticketType: string, quantity: number, userPhone?: string, customerName?: string, customerEmail?: string) {
   // Default values for when Supabase is not configured
   let total = Math.max(1, quantity) * 100;
   let eventId: string | null = null;
@@ -206,6 +203,7 @@ async function generatePaymentLink(eventName: string, ticketType: string, quanti
         ticketType,
         phone: userPhone,
         customerName,
+        customerEmail,
       });
       if (orderId) {
         const link = buildPayfastLink({
@@ -242,7 +240,7 @@ async function generatePaymentLink(eventName: string, ticketType: string, quanti
     custom_int1: String(quantity),
   });
 
-  const webPayUrl = `${frontendBaseUrl.replace(/\/$/, '')}/pay?amt=${total.toFixed(2)}&ref=${Date.now()}&name=${encodeURIComponent(customerName || 'Customer')}`;
+  const webPayUrl = `${frontendBaseUrl.replace(/\/$/, '')}/pay?amt=${total.toFixed(2)}&ref=${Date.now()}&name=${encodeURIComponent(customerName || 'Customer')}&email=${encodeURIComponent(customerEmail || '')}`;
 
   return `PayFast checkout ready.\nEvent: ${eventName}\nTickets: ${quantity}x ${ticketType}\nTotal: R${total.toFixed(2)}\n\nPay here: ${webPayUrl}\n\nTickets will be sent after payment.`;
 }
@@ -311,18 +309,17 @@ export const processUserMessage = async (userMessage: string, userPhone: string)
   try {
     const model = 'gemini-2.0-flash'; 
     
-    // SYSTEM INSTRUCTION: Strictly enforces the 5-step sales flow
     const systemInstruction = `
       Role: You are the helpful "Say HI Africa" booking assistant.
       Goal: Guide the user through a ticket purchase one step at a time.
       Tone: Friendly, concise, professional. Use emojis sparingly (✅, 😊).
 
       STRICT CONVERSATION FLOW (do not skip steps):
-      1) GREET & SHOW: If the user says "Hi" or asks for events, call 'searchEvents'. Show ONLY event names and dates, numbered. Ask: "Which event number would you like to check out?"
-      2) TICKET TYPES: When the user picks an event (e.g., "option 1"), show ticket types and prices for that event only. Ask: "Which ticket type do you want?"
+      1) GREET & SHOW: If user says "Hi" or asks for events, call 'searchEvents'. Show ONLY event names and dates, numbered. Ask: "Which event number would you like?"
+      2) TICKET TYPES: When the user picks an event (e.g., "1"), show ticket types and prices for that event only. Ask: "Which ticket type do you want?"
       3) QUANTITY: After they pick a type, ask: "How many tickets do you need?"
-      4) DETAILS: After quantity, ask: "Please confirm your Name and Surname for the invoice."
-      5) PAYMENT: When you have event + ticket type + quantity + customer name, call 'generatePaymentLink'. Reply with the PayFast link and say tickets will be WhatsApped after payment.
+      4) DETAILS: After quantity, ask for BOTH: "Please confirm your Name & Surname, and your Email for the invoice."
+      5) PAYMENT: When you have event + ticket type + quantity + customer name + email, call 'generatePaymentLink'. Reply with the PayFast link and say: "Once payment is successful, we'll WhatsApp your QR tickets and invoice immediately."
 
       Rules:
       - Ask ONE question at a time.
