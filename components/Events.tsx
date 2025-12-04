@@ -163,6 +163,20 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
     }
   };
 
+  const handlePublish = async (eventId: string) => {
+    try {
+      const { error } = await supabase
+        .from('events')
+        .update({ status: 'PUBLISHED' })
+        .eq('id', eventId);
+      if (error) throw error;
+      fetchEvents();
+    } catch (error) {
+      console.error("Publish event error:", error);
+      alert('Failed to publish event.');
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
@@ -239,9 +253,22 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
                         <p className="text-xs text-slate-400 uppercase font-semibold">Revenue</p>
                         <p className="text-sm font-bold text-slate-900">R {event.revenue.toLocaleString()}</p>
                     </div>
-                    <button className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-50">
-                        <MoreHorizontal className="w-5 h-5" />
-                    </button>
+                    <div className="flex gap-2">
+                      {event.status !== EventStatus.PUBLISHED && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePublish(event.id);
+                          }}
+                          className="text-xs px-3 py-1.5 rounded-full bg-green-600 text-white hover:bg-green-700"
+                        >
+                          Publish
+                        </button>
+                      )}
+                      <button className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-50" onClick={(e) => e.stopPropagation()}>
+                          <MoreHorizontal className="w-5 h-5" />
+                      </button>
+                    </div>
                     </div>
                 </div>
                 </div>
