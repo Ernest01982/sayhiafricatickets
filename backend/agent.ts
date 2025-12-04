@@ -56,9 +56,10 @@ const generatePaymentLinkDeclaration: FunctionDeclaration = {
     properties: {
       eventName: { type: Type.STRING, description: 'Name of the event.' },
       ticketType: { type: Type.STRING, description: 'Type of ticket (e.g., VIP, General).' },
-      quantity: { type: Type.NUMBER, description: 'Number of tickets.' }
+      quantity: { type: Type.NUMBER, description: 'Number of tickets.' },
+      customerName: { type: Type.STRING, description: 'Customer full name for the invoice.' }
     },
-    required: ['eventName', 'ticketType', 'quantity']
+    required: ['eventName', 'ticketType', 'quantity', 'customerName']
   }
 };
 
@@ -150,13 +151,14 @@ const createOrder = async (args: {
   quantity: number;
   ticketType: string;
   phone?: string;
+  customerName?: string;
 }) => {
   if (!supabase) return null;
   const { data, error } = await supabase
     .from('orders')
     .insert({
       event_id: args.eventId,
-      customer_name: 'WhatsApp User',
+      customer_name: args.customerName || 'WhatsApp User',
       customer_email: 'whatsapp@sayhi.africa',
       customer_phone: args.phone || 'unknown',
       total_amount: args.total,
@@ -178,7 +180,7 @@ const buildPayfastLink = (params: Record<string, string>) => {
   return `https://sandbox.payfast.co.za/eng/process?${search.toString()}`;
 };
 
-async function generatePaymentLink(eventName: string, ticketType: string, quantity: number, userPhone?: string) {
+async function generatePaymentLink(eventName: string, ticketType: string, quantity: number, userPhone?: string, customerName?: string) {
   // Default values for when Supabase is not configured
   let total = Math.max(1, quantity) * 100;
   let eventId: string | null = null;
@@ -202,6 +204,7 @@ async function generatePaymentLink(eventName: string, ticketType: string, quanti
         quantity,
         ticketType,
         phone: userPhone,
+        customerName,
       });
       if (orderId) {
         const link = buildPayfastLink({
@@ -307,19 +310,22 @@ export const processUserMessage = async (userMessage: string, userPhone: string)
     
     // SYSTEM INSTRUCTION: Strictly enforces the 5-step sales flow
     const systemInstruction = `
-      Role: Say HI Africa Ticketing Agent.
-      Tone: Energetic, helpful, efficient.
-      
-      Your Goal is to sell tickets. Follow this exact flow:
-      1. Browse: If user says "Hi" or asks for events, call 'searchEvents'. Display the list with prices.
-      2. Select: If user selects an event (e.g. "I want option 1"), ask for "Ticket Type" (if multiple) and "Quantity".
-      3. Payment: Once you have Event + Type + Quantity, call 'generatePaymentLink'.
-      4. Delivery: Tell the user the QR code will be sent to this chat immediately after payment.
+      Role: You are the helpful "Say HI Africa" booking assistant.
+      Goal: Guide the user through a ticket purchase one step at a time.
+      Tone: Friendly, concise, professional. Use emojis sparingly (✅, 😊).
+
+      STRICT CONVERSATION FLOW (do not skip steps):
+      1) GREET & SHOW: If the user says "Hi" or asks for events, call 'searchEvents'. Show ONLY event names and dates, numbered. Ask: "Which event number would you like to check out?"
+      2) TICKET TYPES: When the user picks an event (e.g., "option 1"), show ticket types and prices for that event only. Ask: "Which ticket type do you want?"
+      3) QUANTITY: After they pick a type, ask: "How many tickets do you need?"
+      4) DETAILS: After quantity, ask: "Please confirm your Name and Surname for the invoice."
+      5) PAYMENT: When you have event + ticket type + quantity + customer name, call 'generatePaymentLink'. Reply with the PayFast link and say tickets will be WhatsApped after payment.
 
       Rules:
-      - Always use the tools provided.
-      - Do not make up links. Use 'generatePaymentLink'.
-      - Keep responses short (WhatsApp style).
+      - Ask ONE question at a time.
+      - If 'searchEvents' returns empty, apologize and say no shows are live.
+      - Never invent links; always use generatePaymentLink.
+      - Keep replies short (WhatsApp style).
     `;
 
     // 1. First turn - Send user message to Gemini
@@ -334,11 +340,11 @@ export const processUserMessage = async (userMessage: string, userPhone: string)
     
     // 2. Handle Tool Calls
     if (functionCalls && functionCalls.length > 0) {
-      const functionResponses = [];
+        const functionResponses = [];
 
-      for (const call of functionCalls) {
-        const { name, args } = call;
-        let functionResult = "";
+        for (const call of functionCalls) {
+          const { name, args } = call;
+          let functionResult = "";
 
         if (name === 'searchEvents') {
           functionResult = await searchEvents(args['query'] as string);
@@ -347,7 +353,8 @@ export const processUserMessage = async (userMessage: string, userPhone: string)
             args['eventName'] as string, 
             args['ticketType'] as string, 
             args['quantity'] as number,
-            userPhone
+            userPhone,
+            args['customerName'] as string
           );
         } else if (name === 'checkTicketStatus') {
           functionResult = await checkTicketStatus(args['ticketId'] as string);
