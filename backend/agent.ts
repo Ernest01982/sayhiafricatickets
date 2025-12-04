@@ -23,6 +23,7 @@ const supabase = supabaseUrl && supabaseServiceKey
 
 // 2. Initialize Gemini
 const genAI = geminiApiKey ? new GoogleGenAI({ apiKey: geminiApiKey }) : null;
+const hasGenAI = Boolean(genAI);
 
 // --- TOOLS DEFINITION ---
 
@@ -75,18 +76,23 @@ const tools: Tool[] = [{
 
 // --- EXECUTION FUNCTIONS ---
 
+type TicketTypeRow = { name: string; price: number };
+
 async function searchEvents(query?: string) {
   if (!supabase) return 'Events unavailable. Configure Supabase.';
 
   // Fetch events AND their ticket types so the user can see prices
+  const baseSelect = `
+    title,
+    date,
+    venue,
+    status,
+    ticket_types (name, price)
+  `;
+
   let dbQuery = supabase
     .from('events')
-    .select(`
-      title, 
-      date, 
-      venue, 
-      ticket_types (name, price)
-    `)
+    .select(baseSelect)
     .eq('status', 'PUBLISHED')
     .limit(5);
 
@@ -94,16 +100,29 @@ async function searchEvents(query?: string) {
     dbQuery = dbQuery.ilike('title', `%${query}%`);
   }
 
-  const { data, error } = await dbQuery;
-  if (error || !data || data.length === 0) return "No events found.";
+  let { data, error } = await dbQuery;
+
+  // If no published events match, fall back to any recent events so the simulator still shows data.
+  if ((!data || data.length === 0) && !error) {
+    const fallback = await supabase
+      .from('events')
+      .select(baseSelect)
+      .order('date', { ascending: true })
+      .limit(5);
+    data = fallback.data || data;
+    error = fallback.error || error;
+  }
+
+  if (error || !data || data.length === 0) return 'No events found.';
   
   // Format the output clearly for the LLM
-  return data.map((e, index) => {
-    const types = e.ticket_types
-      // @ts-ignore
-      ? e.ticket_types.map((t: any) => `   - ${t.name}: R${t.price}`).join('\n')
+  return data.map((event: any, index: number) => {
+    const types = event?.ticket_types as TicketTypeRow[] | null;
+    const statusLabel = event?.status && event.status !== 'PUBLISHED' ? ` [${event.status}]` : '';
+    const typeLines = Array.isArray(types) && types.length > 0
+      ? types.map((t) => `   - ${t.name}: R${t.price}`).join('\n')
       : '   - Standard: R100';
-    return `${index + 1}. *${e.title}* (${e.date})\n${types}`;
+    return `${index + 1}. ${event.title} (${event.date})${statusLabel}\n${typeLines}`;
   }).join('\n\n');
 }
 
@@ -111,7 +130,7 @@ async function generatePaymentLink(eventName: string, ticketType: string, quanti
   // In a real app, this would call PayFast API to create a session.
   // We simulate a secure link here for the demo.
   const total = 100 * quantity; // Mock total calculation
-  return `🧾 *Checkout Ready*\nEvent: ${eventName}\nTickets: ${quantity}x ${ticketType}\n\nSecure Link: https://sayhi.africa/pay/${Date.now()}?amt=${total}`;
+  return `Checkout Ready\nEvent: ${eventName}\nTickets: ${quantity}x ${ticketType}\n\nSecure Link: https://sayhi.africa/pay/${Date.now()}?amt=${total}`;
 }
 
 async function checkTicketStatus(ticketId: string) {
@@ -123,7 +142,7 @@ async function checkTicketStatus(ticketId: string) {
     .or(`id.eq.${ticketId},qr_code.eq.${ticketId}`)
     .single();
 
-  if (error) return "Invalid Ticket.";
+  if (error) return 'Invalid Ticket.';
   return `Status: ${data.status} | Holder: ${data.holder_name}`;
 }
 
@@ -149,8 +168,31 @@ const extractFunctionCalls = (payload: any) => {
   return response?.functionCalls || payload?.functionCalls || [];
 };
 
+const buildFallbackResponse = async (userMessage: string): Promise<string> => {
+  const lower = userMessage.toLowerCase();
+
+  const ticketMatch = userMessage.match(/(?:ticket|qr|id)[^a-zA-Z0-9]?[:#]?\s*([A-Za-z0-9-]{6,})/i);
+  if (ticketMatch) {
+    const status = await checkTicketStatus(ticketMatch[1]);
+    return `Quick check: ${status}`;
+  }
+
+  const wantsEvents = ['event', 'ticket', 'show', 'list', 'hi', 'hello', 'hey'].some(keyword =>
+    lower.includes(keyword)
+  );
+
+  if (wantsEvents) {
+    const list = await searchEvents();
+    return `Here are events you can book:\n${list}\nReply with the option number, ticket type, and quantity for a payment link.`;
+  }
+
+  return "I can show you events and generate a PayFast link. Say 'show events' to browse or share a ticket ID to validate.";
+};
+
 export const processUserMessage = async (userMessage: string, userPhone: string): Promise<string> => {
-  if (!genAI) return "Agent offline. Configure API_KEY in backend/.env";
+  if (!hasGenAI) {
+    return buildFallbackResponse(userMessage);
+  }
 
   try {
     const model = 'gemini-2.0-flash'; 
@@ -158,13 +200,13 @@ export const processUserMessage = async (userMessage: string, userPhone: string)
     // SYSTEM INSTRUCTION: Strictly enforces the 5-step sales flow
     const systemInstruction = `
       Role: Say HI Africa Ticketing Agent.
-      Tone: Energetic, helpful, efficient. Use emojis 🎟️ 🔥.
+      Tone: Energetic, helpful, efficient.
       
       Your Goal is to sell tickets. Follow this exact flow:
-      1. **Browse**: If user says "Hi" or asks for events, call 'searchEvents'. Display the list with prices.
-      2. **Select**: If user selects an event (e.g. "I want option 1"), ask for "Ticket Type" (if multiple) and "Quantity".
-      3. **Payment**: Once you have Event + Type + Quantity, call 'generatePaymentLink'.
-      4. **Delivery**: Tell the user the QR code will be sent to this chat immediately after payment.
+      1. Browse: If user says "Hi" or asks for events, call 'searchEvents'. Display the list with prices.
+      2. Select: If user selects an event (e.g. "I want option 1"), ask for "Ticket Type" (if multiple) and "Quantity".
+      3. Payment: Once you have Event + Type + Quantity, call 'generatePaymentLink'.
+      4. Delivery: Tell the user the QR code will be sent to this chat immediately after payment.
 
       Rules:
       - Always use the tools provided.
@@ -173,7 +215,7 @@ export const processUserMessage = async (userMessage: string, userPhone: string)
     `;
 
     // 1. First turn - Send user message to Gemini
-    const result = await genAI.models.generateContent({
+    const result = await genAI!.models.generateContent({
       model,
       contents: userMessage,
       config: { tools, systemInstruction }
@@ -210,7 +252,7 @@ export const processUserMessage = async (userMessage: string, userPhone: string)
       }
 
       // 3. Second turn - Feed tool results back to Gemini for final response
-      const secondResult = await genAI.models.generateContent({
+      const secondResult = await genAI!.models.generateContent({
         model,
         contents: [
           { role: 'user', parts: [{ text: userMessage }] },
@@ -230,6 +272,6 @@ export const processUserMessage = async (userMessage: string, userPhone: string)
 
   } catch (error) {
     console.error("Agent Error:", error);
-    return "System Error. Please try again.";
+    return buildFallbackResponse(userMessage);
   }
 };

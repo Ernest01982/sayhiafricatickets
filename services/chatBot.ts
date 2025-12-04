@@ -9,8 +9,9 @@ const normalizeBaseUrl = () => {
 };
 
 const API_BASE_URL = normalizeBaseUrl();
-const FALLBACK_GEMINI_KEY = 'Ep4AtmWYeNu.hB4';
-const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY?.trim() || FALLBACK_GEMINI_KEY;
+const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY?.trim();
+const canUseGemini = Boolean(geminiApiKey);
+const BACKEND_TIMEOUT_MS = 15000;
 
 interface ChatResponsePayload {
   response?: string;
@@ -31,13 +32,13 @@ const parseGeminiText = (payload: any): string => {
     .trim();
 };
 
-const generateWithGemini = async (userMessage: string): Promise<string> => {
-  if (!geminiApiKey) {
+const generateWithGemini = async (apiKey: string, userMessage: string): Promise<string> => {
+  if (!apiKey) {
     throw new Error('Gemini API key missing.');
   }
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiApiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -71,14 +72,16 @@ export const processUserMessage = async (userMessage: string): Promise<string> =
   }
 
   // Try hitting Gemini directly to simulate bot responses inside the admin console.
-  try {
-    return await generateWithGemini(userMessage);
-  } catch (geminiError) {
-    console.error('Gemini simulation failed, falling back to backend:', geminiError);
+  if (canUseGemini) {
+    try {
+      return await generateWithGemini(geminiApiKey as string, userMessage);
+    } catch (geminiError) {
+      console.error('Gemini simulation failed, falling back to backend:', geminiError);
+    }
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
 
   try {
     const response = await fetch(`${API_BASE_URL}/chat`, {
