@@ -19,7 +19,7 @@ Say HI Africa is a WhatsApp-first ticketing suite for African event promoters. T
    ```bash
    npm install
    ```
-2. **Environment variables** – copy `.env.local.example` and add your keys:
+2. **Environment variables** – copy `.env.local.example` and add your keys (Supabase URL + anon key are required for auth):
    ```env
    VITE_SUPABASE_URL=https://your-project-id.supabase.co
    VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
