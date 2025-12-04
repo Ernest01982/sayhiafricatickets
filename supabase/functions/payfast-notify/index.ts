@@ -6,6 +6,8 @@ const supabaseKey =
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
   Deno.env.get("SUPABASE_SERVICE_KEY") ||
   Deno.env.get("SERVICE_ROLE_KEY");
+const whatsappToken = Deno.env.get("WHATSAPP_TOKEN") || "";
+const phoneNumberId = Deno.env.get("PHONE_NUMBER_ID") || "";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -27,6 +29,29 @@ const parseBody = async (req: Request) => {
 
 const ok = (msg = "OK") => new Response(msg, { status: 200, headers: corsHeaders });
 const error = (msg = "Error", status = 500) => new Response(msg, { status, headers: corsHeaders });
+
+const sendWhatsAppMessage = async (to: string, body: string) => {
+  if (!whatsappToken || !phoneNumberId || !to) return;
+  const sanitized = to.replace(/[^\d+]/g, "");
+  if (!sanitized) return;
+  try {
+    await fetch(`https://graph.facebook.com/v17.0/${phoneNumberId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${whatsappToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        to: sanitized,
+        type: "text",
+        text: { body },
+      }),
+    });
+  } catch (err) {
+    console.error("WhatsApp send error:", err);
+  }
+};
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return ok();
@@ -55,6 +80,26 @@ serve(async (req) => {
       }));
       await supabase.from("tickets").insert(tickets);
     }
+
+    // Fetch order + tickets to notify user
+    const { data: order } = await supabase
+      .from("orders")
+      .select("customer_phone, customer_name, customer_email")
+      .eq("id", orderId)
+      .maybeSingle();
+    const { data: tickets } = await supabase
+      .from("tickets")
+      .select("qr_code")
+      .eq("order_id", orderId);
+
+    const ticketList = (tickets || []).map((t) => t.qr_code).join("\n- ");
+    const name = order?.customer_name || "there";
+    const message = `Hi ${name}, payment received ✅\nYour tickets are ready:\n- ${ticketList || "Ticket issued"}\nShow this QR code at the gate.`;
+
+    if (order?.customer_phone) {
+      await sendWhatsAppMessage(order.customer_phone, message);
+    }
+
     return ok();
   } catch (err) {
     console.error("PayFast notify error:", err);

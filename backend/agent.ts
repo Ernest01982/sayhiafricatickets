@@ -13,6 +13,8 @@ const payfastReturnUrl = process.env.PAYFAST_RETURN_URL || 'https://sayhi.africa
 const payfastCancelUrl = process.env.PAYFAST_CANCEL_URL || 'https://sayhi.africa/pay/cancel';
 const payfastNotifyUrl = process.env.PAYFAST_NOTIFY_URL || 'http://localhost:3000/payfast/notify';
 const frontendBaseUrl = process.env.FRONTEND_URL || 'https://sayhiafricatickets.netlify.app';
+const whatsappToken = process.env.WHATSAPP_TOKEN;
+const phoneNumberId = process.env.PHONE_NUMBER_ID;
 
 if (!supabaseUrl || !supabaseServiceKey) {
   console.warn('Supabase credentials are missing. Ticket search features will return fallback messages.');
