@@ -3,8 +3,10 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 type TicketTypeRow = { id: string; name: string; price: number };
 type SessionState = {
-  step: "list" | "ticket" | "quantity" | "details";
-  event?: { id: string; title: string; ticket_types: TicketTypeRow[] };
+  step?: "list" | "ticket" | "quantity" | "details";
+  eventId?: string;
+  eventTitle?: string;
+  ticketTypes?: TicketTypeRow[];
   ticketType?: TicketTypeRow | null;
   quantity?: number | null;
   name?: string | null;
@@ -32,7 +34,6 @@ const payfastNotifyUrl = Deno.env.get("PAYFAST_NOTIFY_URL") || "https://illeefvn
 const frontendBaseUrl = Deno.env.get("FRONTEND_URL") || "https://sayhiafricatickets.netlify.app";
 
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
-const sessions = new Map<string, SessionState>();
 
 const readJson = async (req: Request) => {
   try {
@@ -125,16 +126,16 @@ const formatEvents = (events: Awaited<ReturnType<typeof getEvents>>) =>
     })
     .join("\n");
 
-const buildReply = (args: { events: Awaited<ReturnType<typeof getEvents>>; message: string; phone?: string }) => {
-  const { events, message, phone } = args;
-  const sessionKey = phone || "default";
-  const current = sessions.get(sessionKey);
+const buildReply = (args: { events: Awaited<ReturnType<typeof getEvents>>; message: string; state?: SessionState }) => {
+  const { events, message, state } = args;
+  const current: SessionState = state || {};
 
   const lower = message.toLowerCase();
   const ticketMatch = message.match(/(?:ticket|qr|id)[^a-zA-Z0-9]?[:#]?\s*([A-Za-z0-9-]{6,})/i);
-  const qtyMatches = message.match(/\d+/g) || [];
-  const eventNumber = qtyMatches.length > 0 ? parseInt(qtyMatches[0], 10) : NaN;
-  const quantity = qtyMatches.length > 1 ? Math.max(1, parseInt(qtyMatches[qtyMatches.length - 1], 10)) : NaN;
+  const numbers = (message.match(/\d+/g) || []).map((n) => parseInt(n, 10));
+  const eventNumber = numbers.length > 0 ? numbers[0] : NaN;
+  const typeNumber = numbers.length > 1 ? numbers[1] : NaN;
+  const qtyNumber = numbers.length > 2 ? numbers[2] : numbers.length === 2 ? numbers[1] : NaN;
   const emailMatch = message.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
   const nameCandidate = message
     .replace(emailMatch ? emailMatch[0] : "", "")
@@ -146,81 +147,74 @@ const buildReply = (args: { events: Awaited<ReturnType<typeof getEvents>>; messa
     return { type: "ticket-check", ticketId: ticketMatch[1] };
   }
 
-  // Reset on greeting or if no events
+  // Greeting or start over
   if (!events.length || lower.includes("hi") || lower.includes("hello")) {
-    sessions.set(sessionKey, { step: "list" });
-    return { type: "list", body: `Here are events you can book:\n${formatEvents(events)}\n\nReply with the event number to continue.`, sessionKey };
+    return {
+      type: "list",
+      body: `Here are events you can book:\n${formatEvents(events)}\n\nReply with the event number to continue.`,
+      state: { step: "list" },
+    };
   }
 
-  // If we're expecting a ticket type/quantity/details, use session context
-  if (current?.event) {
-    // If we are at details step, try to capture name/email
-    if (current.step === "details") {
-      const nameCandidate = message
-        .replace(emailMatch ? emailMatch[0] : "", "")
-        .replace(/\d+/g, "")
-        .trim();
-      const updated: SessionState = {
-        ...current,
-        name: nameCandidate && nameCandidate.length > 2 ? nameCandidate : current.name || null,
-        email: emailMatch ? emailMatch[0] : current.email || null,
-      };
-      sessions.set(sessionKey, updated);
-      return { type: "flow", ...updated, sessionKey };
-    }
+  let nextState: SessionState = { ...(current || {}) };
 
-    // If we are at quantity step, capture quantity
-    if (current.step === "quantity" && !Number.isNaN(quantity)) {
-      const updated: SessionState = { ...current, quantity, step: "details" };
-      sessions.set(sessionKey, updated);
-      return { type: "flow", ...updated, sessionKey };
-    }
+  // Ensure we have the current event object
+  let event = events.find((e) => e.id === nextState.eventId) || events[0];
+  const ticketTypes = Array.isArray(event.ticket_types) ? event.ticket_types : [];
 
-    // If we are at ticket step, capture ticket type selection
-    if (current.step === "ticket") {
-      const idx = !Number.isNaN(eventNumber) ? eventNumber - 1 : -1;
-      const types = Array.isArray(current.event.ticket_types) ? current.event.ticket_types : [];
-      const picked = idx >= 0 && types[idx] ? types[idx] : (types.find((t) => lower.includes(t.name.toLowerCase())) || null);
-      if (picked) {
-        const updated: SessionState = { ...current, ticketType: picked, step: "quantity" };
-        sessions.set(sessionKey, updated);
-        return { type: "flow", ...updated, sessionKey };
-      }
+  // Step 1: Event selection
+  if (nextState.step !== "ticket" && nextState.step !== "quantity" && nextState.step !== "details") {
+    const idx = !Number.isNaN(eventNumber) ? eventNumber - 1 : -1;
+    event = idx >= 0 && events[idx] ? events[idx] : event;
+    nextState = {
+      step: "ticket",
+      eventId: event.id,
+      eventTitle: event.title,
+      ticketTypes,
+      ticketType: null,
+      quantity: null,
+      email: null,
+      name: null,
+    };
+    const options = ticketTypes.map((t, i) => `${i + 1}. ${t.name} - R${t.price}`).join("\n");
+    return { type: "flow", state: nextState, response: `Great, "${event.title}". Ticket options:\n${options}\n\nWhich ticket type number do you want?` };
+  }
+
+  // Step 2: Ticket type selection
+  if (!nextState.ticketType) {
+    const idx = !Number.isNaN(typeNumber) ? typeNumber - 1 : -1;
+    const picked = idx >= 0 && ticketTypes[idx] ? ticketTypes[idx] : ticketTypes.find((t) => lower.includes(t.name.toLowerCase()));
+    if (picked) {
+      nextState = { ...nextState, ticketType: picked, step: "quantity" };
+    } else {
+      const options = ticketTypes.map((t, i) => `${i + 1}. ${t.name} - R${t.price}`).join("\n");
+      return { type: "flow", state: nextState, response: `Ticket options:\n${options}\n\nWhich ticket type number do you want?` };
     }
   }
 
-  let selected = events[0];
-  if (!Number.isNaN(eventNumber)) {
-    const idx = eventNumber - 1;
-    if (events[idx]) selected = events[idx];
+  // Step 3: Quantity
+  if (!nextState.quantity || nextState.quantity < 1) {
+    if (!Number.isNaN(qtyNumber) && qtyNumber > 0) {
+      nextState = { ...nextState, quantity: qtyNumber, step: "details" };
+    } else {
+      return { type: "flow", state: nextState, response: `How many "${nextState.ticketType?.name}" tickets do you need?` };
+    }
   }
 
-  const ticketNames = Array.isArray(selected.ticket_types)
-    ? (selected.ticket_types as TicketTypeRow[]).map((t) => t.name.toLowerCase())
-    : [];
-  const typeIndex = qtyMatches.length > 1 && !Number.isNaN(eventNumber)
-    ? parseInt(qtyMatches[1], 10) - 1
-    : -1;
-  const matchedType =
-    ticketNames.find((n) => lower.includes(n)) ||
-    (typeIndex >= 0 && ticketNames[typeIndex] ? ticketNames[typeIndex] : null);
+  // Step 4: Details (name + email)
+  if (emailMatch && !nextState.email) {
+    nextState.email = emailMatch[0];
+  }
+  if (!nextState.name && nameCandidate && nameCandidate.length > 2) {
+    nextState.name = nameCandidate;
+  }
+  if (!nextState.email || !nextState.name) {
+    return { type: "flow", state: nextState, response: `Please send your Name & Surname AND your Email to finish the invoice.` };
+  }
 
-  const initial: SessionState = {
-    step: matchedType ? "quantity" : "ticket",
-    event: selected,
-    ticketType: matchedType,
-    quantity: Number.isNaN(quantity) ? null : quantity,
-    email: emailMatch ? emailMatch[0] : null,
-    name: nameCandidate && nameCandidate.length > 2 ? nameCandidate : null,
-  };
-
-  sessions.set(sessionKey, initial);
-
-  return {
-    type: "flow",
-    ...initial,
-    sessionKey,
-  };
+  // Ready for payment
+  nextState.step = "details";
+  return { type: "flow", state: nextState };
 };
 
 const checkTicketStatus = async (ticketId: string) => {
@@ -273,51 +267,41 @@ serve(async (req) => {
   }
 
   const phone = typeof body.phone === "string" ? body.phone : "unknown";
+  const clientState: SessionState | undefined = body.state;
   const events = await getEvents();
-  const intent = buildReply({ events, message: body.message, phone });
+  const intent = buildReply({ events, message: body.message, state: clientState });
 
   try {
     if (intent.type === "ticket-check" && intent.ticketId) {
       const status = await checkTicketStatus(intent.ticketId);
-      return ok({ response: status });
+      return ok({ response: status, state: clientState || {} });
     }
 
     if (intent.type === "list" || !intent.event) {
-      return ok({ response: intent.body });
+      return ok({ response: intent.body, state: intent.state || {} });
     }
 
     if (intent.type === "flow") {
-      const event = intent.event;
-      const ticketTypes = Array.isArray(event.ticket_types) ? (event.ticket_types as TicketTypeRow[]) : [];
-
-      // Step 2: Ticket types
-      if (!intent.ticketType) {
-        const options = ticketTypes
-          .map((t, idx) => `${idx + 1}. ${t.name} - R${t.price}`)
-          .join("\n");
-        return ok({ response: `Great, "${event.title}". Ticket options:\n${options}\n\nWhich ticket type number do you want?` });
+      const state = intent.state || {};
+      // If still missing fields, just return the prompt with updated state
+      if (!state.ticketType || !state.quantity || !state.email || !state.name) {
+        return ok({ response: intent.response, state });
       }
 
-      // Step 3: Quantity
-      if (!intent.quantity || intent.quantity < 1) {
-        return ok({ response: `How many "${intent.ticketType}" tickets do you need?` });
-      }
-
-      // Step 4: Name & email
-      if (!intent.email || !intent.name) {
-        return ok({ response: `Please send your Name & Surname AND your Email to finish the invoice.` });
-      }
-
-      // Step 5: Payment
-      const payment = await generatePaymentLink(event.title, intent.ticketType, intent.quantity, phone, intent.name, intent.email);
-      const baseReply = `Almost there! ${event.title}\n${intent.ticketType} x${intent.quantity}\nTotal: R${payment.total.toFixed(2)}\nPay here: ${payment.link}\nAfter payment, QR tickets and invoice will be sent here.`;
+      const payment = await generatePaymentLink(
+        state.eventTitle || "Event",
+        state.ticketType?.name || state.ticketType?.toString() || "General Admission",
+        state.quantity,
+        phone,
+        state.name || undefined,
+        state.email || undefined
+      );
+      const baseReply = `Almost there! ${state.eventTitle}\n${state.ticketType?.name || state.ticketType} x${state.quantity}\nTotal: R${payment.total.toFixed(2)}\nPay here: ${payment.link}\nAfter payment, QR tickets and invoice will be sent here.`;
       const flavoured = await summarize(`Rewrite for WhatsApp in 2 short lines, friendly and clear:\n${baseReply}`);
-      // Reset session after payment link is sent
-      if (intent.sessionKey) sessions.delete(intent.sessionKey);
-      return ok({ response: flavoured || baseReply });
+      return ok({ response: flavoured || baseReply, state: { step: "list" } });
     }
 
-    return ok({ response: "How can I help?" });
+    return ok({ response: "How can I help?", state: clientState || {} });
   } catch (err) {
     console.error("Function error:", err);
     return error("System Error. Please try again.", 500);

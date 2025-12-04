@@ -26,6 +26,19 @@ const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY?.trim();
 const canUseGemini = Boolean(geminiApiKey);
 const BACKEND_TIMEOUT_MS = 15000;
 
+type SimState = {
+  step?: string;
+  eventId?: string;
+  eventTitle?: string;
+  ticketTypes?: Array<{ id: string; name: string; price: number }>;
+  ticketType?: string | null;
+  quantity?: number | null;
+  name?: string | null;
+  email?: string | null;
+};
+
+let simState: SimState = {};
+
 interface ChatResponsePayload {
   response?: string;
   error?: string;
@@ -93,13 +106,16 @@ export const processUserMessage = async (userMessage: string): Promise<string> =
           'Content-Type': 'application/json',
           Authorization: `Bearer ${supabaseAnonKey}`,
         },
-        body: JSON.stringify({ message: userMessage, phone: 'simulator' }),
+        body: JSON.stringify({ message: userMessage, phone: 'simulator', state: simState }),
       });
       if (!resp.ok) {
         const err = await resp.text();
         throw new Error(`Function error (${resp.status}): ${err}`);
       }
       const data = await resp.json();
+      if (data?.state) {
+        simState = data.state as SimState;
+      }
       if (data?.response) return data.response as string;
     } catch (fnError) {
       console.error('Edge function failed, falling back:', fnError);
