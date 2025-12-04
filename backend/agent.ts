@@ -12,6 +12,7 @@ const payfastMerchantKey = process.env.PAYFAST_MERCHANT_KEY || '46f0cd694581a'; 
 const payfastReturnUrl = process.env.PAYFAST_RETURN_URL || 'https://sayhi.africa/pay/success';
 const payfastCancelUrl = process.env.PAYFAST_CANCEL_URL || 'https://sayhi.africa/pay/cancel';
 const payfastNotifyUrl = process.env.PAYFAST_NOTIFY_URL || 'http://localhost:3000/payfast/notify';
+const frontendBaseUrl = process.env.FRONTEND_URL || 'https://sayhiafricatickets.netlify.app';
 
 if (!supabaseUrl || !supabaseServiceKey) {
   console.warn('Supabase credentials are missing. Ticket search features will return fallback messages.');
@@ -241,7 +242,9 @@ async function generatePaymentLink(eventName: string, ticketType: string, quanti
     custom_int1: String(quantity),
   });
 
-  return `PayFast checkout ready.\nEvent: ${eventName}\nTickets: ${quantity}x ${ticketType}\nTotal: R${total.toFixed(2)}\n\nPay here: ${fallbackLink}\n\nTickets will be sent after payment.`;
+  const webPayUrl = `${frontendBaseUrl.replace(/\/$/, '')}/pay?amt=${total.toFixed(2)}&ref=${Date.now()}&name=${encodeURIComponent(customerName || 'Customer')}`;
+
+  return `PayFast checkout ready.\nEvent: ${eventName}\nTickets: ${quantity}x ${ticketType}\nTotal: R${total.toFixed(2)}\n\nPay here: ${webPayUrl}\n\nTickets will be sent after payment.`;
 }
 
 async function checkTicketStatus(ticketId: string) {

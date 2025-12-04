@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Layout } from './components/Layout';
 import { LandingPage } from './components/LandingPage';
 import { LoginPage } from './components/LoginPage';
@@ -20,10 +20,11 @@ import { EventLiveMonitor } from './components/EventLiveMonitor';
 import { PublicEventsPage } from './components/PublicEventsPage';
 import { WhatsAppTest } from './components/WhatsAppTest';
 import { PricingPage } from './components/PricingPage';
+import { PaymentPage } from './components/PaymentPage';
 import { UserRole } from './types';
 import { supabase } from './services/supabaseClient';
 
-type AppView = 'landing' | 'login' | 'dashboard' | 'legal-terms' | 'legal-privacy' | 'public-events' | 'pricing';
+type AppView = 'landing' | 'login' | 'dashboard' | 'legal-terms' | 'legal-privacy' | 'public-events' | 'pricing' | 'pay';
 
 const App: React.FC = () => {
   // Auth & Navigation State
@@ -33,6 +34,13 @@ const App: React.FC = () => {
   // Dashboard Navigation State
   const [activePage, setActivePage] = useState<string>('dashboard');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+
+  // Deep link handler for /pay checkout route
+  useEffect(() => {
+    if (window.location.pathname === '/pay') {
+      setView('pay');
+    }
+  }, []);
 
   const handleLogin = (selectedRole: UserRole) => {
     setRole(selectedRole);
@@ -77,6 +85,17 @@ const App: React.FC = () => {
 
   if (view === 'pricing') {
     return <PricingPage onBack={() => setView('landing')} onGetStarted={() => setView('login')} />;
+  }
+
+  if (view === 'pay') {
+    return (
+      <PaymentPage
+        onBack={() => {
+          window.history.pushState({}, '', '/');
+          setView('landing');
+        }}
+      />
+    );
   }
 
   if (view === 'legal-terms') {
