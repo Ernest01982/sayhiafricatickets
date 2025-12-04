@@ -4,7 +4,10 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 type TicketTypeRow = { id: string; name: string; price: number };
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
-const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_KEY");
+const supabaseKey =
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
+  Deno.env.get("SUPABASE_SERVICE_KEY") ||
+  Deno.env.get("SERVICE_ROLE_KEY");
 const geminiKey = Deno.env.get("GEMINI_API_KEY") || "";
 
 const payfastMerchantId = Deno.env.get("PAYFAST_MERCHANT_ID") || "10000100";
