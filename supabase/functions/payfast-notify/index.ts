@@ -8,6 +8,7 @@ const supabaseKey =
   Deno.env.get("SERVICE_ROLE_KEY");
 const whatsappToken = Deno.env.get("WHATSAPP_TOKEN") || "";
 const phoneNumberId = Deno.env.get("PHONE_NUMBER_ID") || "";
+const whatsappEnabled = (Deno.env.get("WHATSAPP_SEND_ENABLED") || "").toLowerCase() === "true";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -31,6 +32,7 @@ const ok = (msg = "OK") => new Response(msg, { status: 200, headers: corsHeaders
 const error = (msg = "Error", status = 500) => new Response(msg, { status, headers: corsHeaders });
 
 const sendWhatsAppMessage = async (to: string, body: string) => {
+  if (!whatsappEnabled) return;
   if (!whatsappToken || !phoneNumberId || !to) return;
   const sanitized = to.replace(/[^\d+]/g, "");
   if (!sanitized) return;
