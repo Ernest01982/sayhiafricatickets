@@ -30,7 +30,7 @@ export const PublicEventsPage: React.FC<PublicEventsPageProps> = ({ onBack }) =>
       const { data, error } = await supabase
         .from('events')
         .select('id,title,date,time,venue,image_url,status,total_capacity,tickets_sold,ticket_types(name,price)')
-        .eq('status', 'PUBLISHED')
+        .in('status', ['PUBLISHED', 'ACTIVE'])
         .order('date', { ascending: true })
         .limit(12);
       if (error) {
