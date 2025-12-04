@@ -16,11 +16,12 @@ const supabaseKey =
   Deno.env.get("SERVICE_ROLE_KEY");
 const geminiKey = Deno.env.get("GEMINI_API_KEY") || "";
 
-const payfastMerchantId = Deno.env.get("PAYFAST_MERCHANT_ID") || "10000100";
-const payfastMerchantKey = Deno.env.get("PAYFAST_MERCHANT_KEY") || "46f0cd694581a";
+const payfastMerchantId = Deno.env.get("PAYFAST_MERCHANT_ID") || "10004002"; // Sandbox defaults
+const payfastMerchantKey = Deno.env.get("PAYFAST_MERCHANT_KEY") || "q1cd2rdny4a53";
 const payfastReturnUrl = Deno.env.get("PAYFAST_RETURN_URL") || "https://sayhi.africa/pay/success";
 const payfastCancelUrl = Deno.env.get("PAYFAST_CANCEL_URL") || "https://sayhi.africa/pay/cancel";
-const payfastNotifyUrl = Deno.env.get("PAYFAST_NOTIFY_URL") || "https://example.com/payfast/notify";
+const payfastNotifyUrl = Deno.env.get("PAYFAST_NOTIFY_URL") || "https://illeefvnyyilddhhwooz.functions.supabase.co/payfast-notify";
+const frontendBaseUrl = Deno.env.get("FRONTEND_URL") || "https://sayhiafricatickets.netlify.app";
 
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
@@ -53,14 +54,14 @@ const buildPayfastLink = (params: Record<string, string>) => {
   return `https://sandbox.payfast.co.za/eng/process?${search.toString()}`;
 };
 
-const createOrder = async (args: { eventId: string; total: number; quantity: number; ticketType: string; phone?: string }) => {
+const createOrder = async (args: { eventId: string; total: number; quantity: number; ticketType: string; phone?: string; customerName?: string; customerEmail?: string }) => {
   if (!supabase) return null;
   const { data, error: err } = await supabase
     .from("orders")
     .insert({
       event_id: args.eventId,
-      customer_name: "WhatsApp User",
-      customer_email: "whatsapp@sayhi.africa",
+      customer_name: args.customerName || "WhatsApp User",
+      customer_email: args.customerEmail || "whatsapp@sayhi.africa",
       customer_phone: args.phone || "unknown",
       total_amount: args.total,
       status: "PENDING",
@@ -72,7 +73,7 @@ const createOrder = async (args: { eventId: string; total: number; quantity: num
   return data?.id as string | null;
 };
 
-const generatePaymentLink = async (eventName: string, ticketType: string, quantity: number, phone?: string) => {
+const generatePaymentLink = async (eventName: string, ticketType: string, quantity: number, phone?: string, customerName?: string, customerEmail?: string) => {
   let total = Math.max(1, quantity) * 100;
   let eventId: string | null = null;
   let ticketTypeId: string | null = null;
@@ -96,90 +97,70 @@ const generatePaymentLink = async (eventName: string, ticketType: string, quanti
         ticketTypeId = match.id;
         total = Number(match.price || 0) * Math.max(1, quantity);
       }
-      const orderId = await createOrder({ eventId, total, quantity, ticketType, phone });
+      const orderId = await createOrder({ eventId, total, quantity, ticketType, phone, customerName, customerEmail });
       if (orderId) {
-        const link = buildPayfastLink({
-          merchant_id: payfastMerchantId,
-          merchant_key: payfastMerchantKey,
-          amount: total.toFixed(2),
-          item_name: `${eventName} x${quantity}`,
-          return_url: payfastReturnUrl,
-          cancel_url: payfastCancelUrl,
-          notify_url: payfastNotifyUrl,
-          custom_str1: orderId,
-          custom_str2: eventName,
-          custom_str3: ticketType,
-          custom_str4: ticketTypeId || "",
-          custom_int1: String(quantity),
-        });
+        const link = `${frontendBaseUrl.replace(/\/$/, "")}/pay?amt=${total.toFixed(2)}&ref=${orderId}&name=${encodeURIComponent(customerName || "Customer")}&email=${encodeURIComponent(customerEmail || "")}`;
         return { link, total, eventTitle: event.title, ticketType: ticketTypeId ? ticketType : ticketType, quantity };
       }
     }
   }
 
-  const fallback = buildPayfastLink({
-    merchant_id: payfastMerchantId,
-    merchant_key: payfastMerchantKey,
-    amount: total.toFixed(2),
-    item_name: `${eventName} x${quantity}`,
-    return_url: payfastReturnUrl,
-    cancel_url: payfastCancelUrl,
-    notify_url: payfastNotifyUrl,
-    custom_str2: eventName,
-    custom_str3: ticketType,
-    custom_int1: String(quantity),
-  });
-
-  return { link: fallback, total, eventTitle: eventName, ticketType, quantity };
+  const fallbackLink = `${frontendBaseUrl.replace(/\/$/, "")}/pay?amt=${total.toFixed(2)}&ref=${Date.now()}&name=${encodeURIComponent(customerName || "Customer")}&email=${encodeURIComponent(customerEmail || "")}`;
+  return { link: fallbackLink, total, eventTitle: eventName, ticketType, quantity };
 };
 
 const formatEvents = (events: Awaited<ReturnType<typeof getEvents>>) =>
   events
     .map((ev, idx) => {
-      const status = ev.status && ev.status !== "PUBLISHED" ? ` [${ev.status}]` : "";
-      const types = Array.isArray(ev.ticket_types) && ev.ticket_types.length
-        ? (ev.ticket_types as TicketTypeRow[])
-            .map((t) => `  - ${t.name}: R${t.price}`)
-            .join("\n")
-        : "  - Standard: R100";
-      return `${idx + 1}. ${ev.title} (${ev.date})${status}\n${types}`;
+      return `${idx + 1}. ${ev.title} (${ev.date})`;
     })
-    .join("\n\n");
+    .join("\n");
 
 const buildReply = (args: { events: Awaited<ReturnType<typeof getEvents>>; message: string; phone?: string }) => {
   const { events, message } = args;
   const lower = message.toLowerCase();
   const ticketMatch = message.match(/(?:ticket|qr|id)[^a-zA-Z0-9]?[:#]?\s*([A-Za-z0-9-]{6,})/i);
-  const qtyMatch = message.match(/(\d+)\s*(?:tickets|tix|x)/i);
-  const quantity = qtyMatch ? Math.max(1, parseInt(qtyMatch[1], 10)) : 1;
+  const qtyMatches = message.match(/\d+/g) || [];
+  const eventNumber = qtyMatches.length > 0 ? parseInt(qtyMatches[0], 10) : NaN;
+  const quantity = qtyMatches.length > 1 ? Math.max(1, parseInt(qtyMatches[qtyMatches.length - 1], 10)) : NaN;
+  const emailMatch = message.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  const nameCandidate = message
+    .replace(emailMatch ? emailMatch[0] : "", "")
+    .replace(/\d+/g, "")
+    .replace(/(tickets?|tix|general|vip|early|option|select|choose|pay|payment|link)/gi, "")
+    .trim();
 
   if (ticketMatch) {
     return { type: "ticket-check", ticketId: ticketMatch[1] };
   }
 
   if (!events.length || lower.includes("hi") || lower.includes("event") || lower.includes("ticket")) {
-    return { type: "list", body: `Here are events you can book:\n${formatEvents(events)}\n\nReply with the option number, ticket type, and quantity.` };
+    return { type: "list", body: `Here are events you can book:\n${formatEvents(events)}\n\nReply with the event number to continue.` };
   }
 
-  const indexMatch = message.match(/(\d+)/);
   let selected = events[0];
-  if (indexMatch) {
-    const idx = parseInt(indexMatch[1], 10) - 1;
+  if (!Number.isNaN(eventNumber)) {
+    const idx = eventNumber - 1;
     if (events[idx]) selected = events[idx];
   }
 
   const ticketNames = Array.isArray(selected.ticket_types)
     ? (selected.ticket_types as TicketTypeRow[]).map((t) => t.name.toLowerCase())
     : [];
+  const typeIndex = qtyMatches.length > 1 && !Number.isNaN(eventNumber)
+    ? parseInt(qtyMatches[1], 10) - 1
+    : -1;
   const matchedType =
     ticketNames.find((n) => lower.includes(n)) ||
-    (ticketNames.length ? ticketNames[0] : "General Admission");
+    (typeIndex >= 0 && ticketNames[typeIndex] ? ticketNames[typeIndex] : null);
 
   return {
-    type: "payment",
+    type: "flow",
     event: selected,
     ticketType: matchedType,
-    quantity,
+    quantity: Number.isNaN(quantity) ? null : quantity,
+    email: emailMatch ? emailMatch[0] : null,
+    name: nameCandidate && nameCandidate.length > 2 ? nameCandidate : null,
   };
 };
 
@@ -246,13 +227,36 @@ serve(async (req) => {
       return ok({ response: intent.body });
     }
 
-    const payment = await generatePaymentLink(intent.event.title, intent.ticketType, intent.quantity, phone);
-    const baseReply = `Great choice! ${intent.event.title}\n${intent.ticketType} x${intent.quantity}\nTotal: R${payment.total.toFixed(2)}\n\nPay here: ${payment.link}\n\nAfter PayFast confirms, your QR tickets arrive in this chat.`;
+    if (intent.type === "flow") {
+      const event = intent.event;
+      const ticketTypes = Array.isArray(event.ticket_types) ? (event.ticket_types as TicketTypeRow[]) : [];
 
-    const flavoured = await summarize(
-      `Rewrite for WhatsApp in 2 short lines, friendly and clear:\n${baseReply}`
-    );
-    return ok({ response: flavoured || baseReply });
+      // Step 2: Ticket types
+      if (!intent.ticketType) {
+        const options = ticketTypes
+          .map((t, idx) => `${idx + 1}. ${t.name} - R${t.price}`)
+          .join("\n");
+        return ok({ response: `Great, "${event.title}". Ticket options:\n${options}\n\nWhich ticket type number do you want?` });
+      }
+
+      // Step 3: Quantity
+      if (!intent.quantity || intent.quantity < 1) {
+        return ok({ response: `How many "${intent.ticketType}" tickets do you need?` });
+      }
+
+      // Step 4: Name & email
+      if (!intent.email || !intent.name) {
+        return ok({ response: `Please send your Name & Surname AND your Email to finish the invoice.` });
+      }
+
+      // Step 5: Payment
+      const payment = await generatePaymentLink(event.title, intent.ticketType, intent.quantity, phone, intent.name, intent.email);
+      const baseReply = `Almost there! ${event.title}\n${intent.ticketType} x${intent.quantity}\nTotal: R${payment.total.toFixed(2)}\nPay here: ${payment.link}\nAfter payment, QR tickets and invoice will be sent here.`;
+      const flavoured = await summarize(`Rewrite for WhatsApp in 2 short lines, friendly and clear:\n${baseReply}`);
+      return ok({ response: flavoured || baseReply });
+    }
+
+    return ok({ response: "How can I help?" });
   } catch (err) {
     console.error("Function error:", err);
     return error("System Error. Please try again.", 500);
