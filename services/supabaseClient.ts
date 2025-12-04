@@ -1,16 +1,48 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 // Prefer environment variables so deployers can supply their own Supabase project.
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey);
+const missingConfigMessage =
+  'Supabase credentials are missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env.local file.';
 
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error(
-    'Supabase credentials are missing. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env.local file.',
-  );
-}
+const mockResponse = <T>(data: T) => ({ data, error: new Error(missingConfigMessage) });
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+const createMockSupabaseClient = (): SupabaseClient => {
+  console.warn(missingConfigMessage);
+
+  const mockSelectBuilder = <T,>(data: T) => ({
+    eq: async () => mockResponse(data),
+    single: async () => mockResponse(Array.isArray(data) ? (data[0] ?? null) : data),
+  });
+
+  const mockFromBuilder = () => ({
+    select: () => mockSelectBuilder<any>([]),
+    insert: () => ({
+      select: () => ({
+        single: async () => mockResponse(null),
+      }),
+    }),
+    update: () => ({
+      eq: async () => mockResponse(null),
+    }),
+  });
+
+  return {
+    auth: {
+      signInWithPassword: async () => ({ data: { user: null }, error: new Error(missingConfigMessage) }),
+      signUp: async () => ({ data: { user: null }, error: new Error(missingConfigMessage) }),
+      signOut: async () => ({ error: new Error(missingConfigMessage) }),
+      getUser: async () => ({ data: { user: null }, error: new Error(missingConfigMessage) }),
+    },
+    from: () => mockFromBuilder(),
+  } as unknown as SupabaseClient;
+};
+
+export const supabase = isSupabaseConfigured
+  ? createClient(supabaseUrl, supabaseKey)
+  : createMockSupabaseClient();
 
 /**
  * Handles Sign In.
