@@ -9,6 +9,7 @@ interface EventsProps {
 
 export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editEventId, setEditEventId] = useState<string | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   
@@ -135,7 +136,7 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
             });
         }
 
-        // 2. Insert Event
+        // Insert Event
         const { data: eventData, error: eventError } = await supabase
             .from('events')
             .insert({
@@ -177,6 +178,7 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
         }
 
         setIsCreateModalOpen(false);
+        setEditEventId(null);
         setCoverFile(null);
         fetchEvents(); // Refresh list
         alert("Event created successfully!");
@@ -186,6 +188,61 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
         alert(`Failed to create event: ${error.message || JSON.stringify(error)}`);
     } finally {
         setIsLoading(false);
+    }
+  };
+
+  const handleUpdateEvent = async () => {
+    if (!editEventId) return;
+    setIsLoading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("You must be logged in to update an event.");
+
+      let uploadedImageUrl: string | null = newEvent.imageUrl || null;
+      if (coverFile) {
+        setIsUploadingImage(true);
+        const fileName = `events/${user.id}-${Date.now()}-${coverFile.name}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('event-covers')
+          .upload(fileName, coverFile, { upsert: false });
+        if (uploadError) {
+          throw new Error(`Image upload failed: ${uploadError.message}`);
+        }
+        if (uploadData?.path) {
+          const { data: publicUrl } = supabase.storage.from('event-covers').getPublicUrl(uploadData.path);
+          if (!publicUrl?.publicUrl) {
+            throw new Error('Image upload succeeded but no public URL returned. Please ensure the "event-covers" bucket is public.');
+          }
+          uploadedImageUrl = publicUrl.publicUrl;
+        }
+        setIsUploadingImage(false);
+      }
+
+      const { error } = await supabase
+        .from('events')
+        .update({
+          title: newEvent.title,
+          date: newEvent.date,
+          time: newEvent.time,
+          venue: newEvent.venue,
+          description: newEvent.description,
+          total_capacity: newEvent.totalCapacity,
+          image_url: uploadedImageUrl,
+        })
+        .eq('id', editEventId);
+
+      if (error) throw error;
+
+      setIsCreateModalOpen(false);
+      setEditEventId(null);
+      setCoverFile(null);
+      fetchEvents();
+      alert("Event updated successfully!");
+    } catch (error: any) {
+      console.error("Update event error:", error);
+      alert(`Failed to update event: ${error.message || JSON.stringify(error)}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -281,15 +338,38 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
                     </div>
                     <div className="flex gap-2">
                       {event.status !== EventStatus.PUBLISHED && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handlePublish(event.id);
-                          }}
-                          className="text-xs px-3 py-1.5 rounded-full bg-green-600 text-white hover:bg-green-700"
-                        >
-                          Publish
-                        </button>
+                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setIsCreateModalOpen(true);
+                              setEditEventId(event.id);
+                              setNewEvent({
+                                id: event.id,
+                                title: event.title,
+                                date: event.date,
+                                time: event.time,
+                                venue: event.venue,
+                                description: event.description,
+                                totalCapacity: event.totalCapacity,
+                                imageUrl: event.imageUrl,
+                              });
+                              setCoverFile(null);
+                            }}
+                            className="text-xs px-3 py-1.5 rounded-full bg-slate-200 text-slate-800 hover:bg-slate-300"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePublish(event.id);
+                            }}
+                            className="text-xs px-3 py-1.5 rounded-full bg-green-600 text-white hover:bg-green-700"
+                          >
+                            Publish
+                          </button>
+                        </>
                       )}
                       <button className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-50" onClick={(e) => e.stopPropagation()}>
                           <MoreHorizontal className="w-5 h-5" />
@@ -486,10 +566,10 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
                 Cancel
               </button>
               <button 
-                onClick={handleCreateEvent}
+                onClick={editEventId ? handleUpdateEvent : handleCreateEvent}
                 className="px-4 py-2 text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors"
               >
-                {isLoading ? 'Creating...' : 'Create Draft Event'}
+                {isLoading ? (editEventId ? 'Updating...' : 'Creating...') : (editEventId ? 'Save Changes' : 'Create Draft Event')}
               </button>
             </div>
           </div>
