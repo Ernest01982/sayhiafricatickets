@@ -63,7 +63,7 @@ export const PublicEventsPage: React.FC<PublicEventsPageProps> = ({ onBack }) =>
           </button>
           <div className="flex items-center gap-2">
              <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center animate-bounce">
-                 <span className="text-lg">dY`<</span>
+                 <span className="text-lg font-black text-white">SA</span>
              </div>
             <h1 className="text-xl font-black tracking-tight">Live Vibes</h1>
           </div>
