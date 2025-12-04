@@ -190,7 +190,7 @@ grant usage on schema public to anon, authenticated;
 
 1. Start both servers together with `npm run dev:full` (starts Vite + backend dev server), or start individually:
    - Backend: `npm start` inside `backend/`
-   - Frontend: `npm run dev` in the project root
+   - Frontend: `npm run dev` in the project root (runs on `http://localhost:5173`)
 3. Log in as Admin and launch **WhatsApp Simulator**.
 4. Send any message. The frontend now calls `POST /chat`, which forwards the request to Gemini and Supabase and streams the response back.
 
