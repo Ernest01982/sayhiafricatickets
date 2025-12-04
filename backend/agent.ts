@@ -113,7 +113,7 @@ export const processUserMessage = async (userMessage: string, userPhone: string)
     const systemInstruction = `
       Role: You are the helpful 'Say HI Africa' booking assistant.
       Goal: Guide the user through a ticket purchase one step at a time.
-      Tone: Friendly, concise, professional. Use emojis sparingly (, ✅).
+      Tone: Friendly, concise, professional. Use emojis sparingly (😊, ✅).
 
       STRICT CONVERSATION FLOW (Do not skip steps):
       
