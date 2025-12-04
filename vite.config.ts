@@ -6,7 +6,9 @@ export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
       server: {
-        port: 3000,
+        // Keep frontend on a different port from the Express backend (3000)
+        // so `npm run dev:full` can start both without conflicts.
+        port: 5173,
         host: '0.0.0.0',
       },
       plugins: [react()],
