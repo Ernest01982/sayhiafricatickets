@@ -3,9 +3,8 @@ const normalizeBaseUrl = () => {
   if (envUrl) {
     return envUrl.replace(/\/$/, '');
   }
-
-  // Default to local backend port for dev environments
-  return 'http://localhost:3000';
+  // No default fallback to localhost in production builds
+  return '';
 };
 
 const normalizeEdgeUrl = () => {
@@ -119,6 +118,7 @@ export const processUserMessage = async (userMessage: string): Promise<string> =
       if (data?.response) return data.response as string;
     } catch (fnError) {
       console.error('Edge function failed, falling back:', fnError);
+      throw new Error('Connection issue; please try again.');
     }
   }
 
@@ -129,6 +129,11 @@ export const processUserMessage = async (userMessage: string): Promise<string> =
     } catch (geminiError) {
       console.error('Gemini simulation failed, falling back to backend:', geminiError);
     }
+  }
+
+  // Backend fallback only if explicitly configured
+  if (!API_BASE_URL) {
+    throw new Error('Agent unavailable. Please check your configuration.');
   }
 
   const controller = new AbortController();
