@@ -6,6 +6,11 @@ const supabaseKey =
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
   Deno.env.get("SUPABASE_SERVICE_KEY") ||
   Deno.env.get("SERVICE_ROLE_KEY");
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
 const parseBody = async (req: Request) => {
@@ -20,10 +25,11 @@ const parseBody = async (req: Request) => {
   }
 };
 
-const ok = (msg = "OK") => new Response(msg, { status: 200 });
-const error = (msg = "Error", status = 500) => new Response(msg, { status });
+const ok = (msg = "OK") => new Response(msg, { status: 200, headers: corsHeaders });
+const error = (msg = "Error", status = 500) => new Response(msg, { status, headers: corsHeaders });
 
 serve(async (req) => {
+  if (req.method === "OPTIONS") return ok();
   if (req.method !== "POST") return error("Method not allowed", 405);
 
   const parsed = await parseBody(req);
