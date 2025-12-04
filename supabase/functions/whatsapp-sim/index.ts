@@ -277,26 +277,46 @@ serve(async (req) => {
       return ok({ response: status, state: clientState || {} });
     }
 
-    if (intent.type === "list" || !intent.event) {
+    if (intent.type === "list") {
       return ok({ response: intent.body, state: intent.state || {} });
     }
 
     if (intent.type === "flow") {
       const state = intent.state || {};
-      // If still missing fields, just return the prompt with updated state
-      if (!state.ticketType || !state.quantity || !state.email || !state.name) {
-        return ok({ response: intent.response, state });
+      const event = events.find((e) => e.id === state.eventId) || events[0];
+
+      if (!state.ticketType) {
+        const types = Array.isArray(event.ticket_types) ? event.ticket_types : [];
+        const options = types.map((t, idx) => `${idx + 1}. ${t.name} - R${t.price}`).join("\n");
+        return ok({
+          response: intent.response || `Great, "${event.title}". Ticket options:\n${options}\n\nWhich ticket type number do you want?`,
+          state,
+        });
+      }
+
+      if (!state.quantity || state.quantity < 1) {
+        return ok({
+          response: intent.response || `How many "${state.ticketType}" tickets do you need?`,
+          state,
+        });
+      }
+
+      if (!state.email || !state.name) {
+        return ok({
+          response: intent.response || `Please send your Name & Surname AND your Email to finish the invoice.`,
+          state,
+        });
       }
 
       const payment = await generatePaymentLink(
-        state.eventTitle || "Event",
-        state.ticketType?.name || state.ticketType?.toString() || "General Admission",
+        state.eventTitle || event.title || "Event",
+        typeof state.ticketType === "string" ? state.ticketType : state.ticketType?.name || "General Admission",
         state.quantity,
         phone,
         state.name || undefined,
         state.email || undefined
       );
-      const baseReply = `Almost there! ${state.eventTitle}\n${state.ticketType?.name || state.ticketType} x${state.quantity}\nTotal: R${payment.total.toFixed(2)}\nPay here: ${payment.link}\nAfter payment, QR tickets and invoice will be sent here.`;
+      const baseReply = `Almost there! ${state.eventTitle || event.title}\n${typeof state.ticketType === "string" ? state.ticketType : state.ticketType?.name} x${state.quantity}\nTotal: R${payment.total.toFixed(2)}\nPay here: ${payment.link}\nAfter payment, QR tickets and invoice will be sent here.`;
       const flavoured = await summarize(`Rewrite for WhatsApp in 2 short lines, friendly and clear:\n${baseReply}`);
       return ok({ response: flavoured || baseReply, state: { step: "list" } });
     }
