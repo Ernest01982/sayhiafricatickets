@@ -7,6 +7,11 @@ dotenv.config();
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY;
 const geminiApiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+const payfastMerchantId = process.env.PAYFAST_MERCHANT_ID || '10000100'; // Sandbox default
+const payfastMerchantKey = process.env.PAYFAST_MERCHANT_KEY || '46f0cd694581a'; // Sandbox default
+const payfastReturnUrl = process.env.PAYFAST_RETURN_URL || 'https://sayhi.africa/pay/success';
+const payfastCancelUrl = process.env.PAYFAST_CANCEL_URL || 'https://sayhi.africa/pay/cancel';
+const payfastNotifyUrl = process.env.PAYFAST_NOTIFY_URL || 'http://localhost:3000/payfast/notify';
 
 if (!supabaseUrl || !supabaseServiceKey) {
   console.warn('Supabase credentials are missing. Ticket search features will return fallback messages.');
@@ -77,6 +82,7 @@ const tools: Tool[] = [{
 // --- EXECUTION FUNCTIONS ---
 
 type TicketTypeRow = { name: string; price: number };
+type TicketTypeFull = { id: string; name: string; price: number };
 
 async function searchEvents(query?: string) {
   if (!supabase) return 'Events unavailable. Configure Supabase.';
@@ -126,11 +132,113 @@ async function searchEvents(query?: string) {
   }).join('\n\n');
 }
 
-async function generatePaymentLink(eventName: string, ticketType: string, quantity: number) {
-  // In a real app, this would call PayFast API to create a session.
-  // We simulate a secure link here for the demo.
-  const total = 100 * quantity; // Mock total calculation
-  return `Checkout Ready\nEvent: ${eventName}\nTickets: ${quantity}x ${ticketType}\n\nSecure Link: https://sayhi.africa/pay/${Date.now()}?amt=${total}`;
+const fetchEventWithTickets = async (eventName: string) => {
+  if (!supabase) return null;
+  const { data } = await supabase
+    .from('events')
+    .select('id,title,status,ticket_types(id,name,price)')
+    .ilike('title', `%${eventName}%`)
+    .order('date', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return data as ({ id: string; title: string; status: string; ticket_types: TicketTypeFull[] } | null);
+};
+
+const createOrder = async (args: {
+  eventId: string;
+  total: number;
+  quantity: number;
+  ticketType: string;
+  phone?: string;
+}) => {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('orders')
+    .insert({
+      event_id: args.eventId,
+      customer_name: 'WhatsApp User',
+      customer_email: 'whatsapp@sayhi.africa',
+      customer_phone: args.phone || 'unknown',
+      total_amount: args.total,
+      status: 'PENDING',
+      channel: 'WHATSAPP',
+    })
+    .select('id')
+    .maybeSingle();
+
+  if (error) {
+    console.error('Order creation failed:', error);
+    return null;
+  }
+  return data?.id as string | null;
+};
+
+const buildPayfastLink = (params: Record<string, string>) => {
+  const search = new URLSearchParams(params);
+  return `https://sandbox.payfast.co.za/eng/process?${search.toString()}`;
+};
+
+async function generatePaymentLink(eventName: string, ticketType: string, quantity: number, userPhone?: string) {
+  // Default values for when Supabase is not configured
+  let total = Math.max(1, quantity) * 100;
+  let eventId: string | null = null;
+  let ticketTypeId: string | null = null;
+
+  if (supabase) {
+    const event = await fetchEventWithTickets(eventName);
+    if (event) {
+      eventId = event.id;
+      const ticketRow = Array.isArray(event.ticket_types)
+        ? event.ticket_types.find((t) => t.name.toLowerCase() === ticketType.toLowerCase()) ?? event.ticket_types[0]
+        : null;
+      if (ticketRow) {
+        ticketTypeId = ticketRow.id;
+        total = Number(ticketRow.price || 0) * Math.max(1, quantity);
+      }
+      // Create order so webhook can mark it paid
+      const orderId = await createOrder({
+        eventId,
+        total,
+        quantity,
+        ticketType,
+        phone: userPhone,
+      });
+      if (orderId) {
+        const link = buildPayfastLink({
+          merchant_id: payfastMerchantId,
+          merchant_key: payfastMerchantKey,
+          amount: total.toFixed(2),
+          item_name: `${eventName} x${quantity}`,
+          return_url: payfastReturnUrl,
+          cancel_url: payfastCancelUrl,
+          notify_url: payfastNotifyUrl,
+          custom_str1: orderId,
+          custom_str2: eventName,
+          custom_str3: ticketType,
+          custom_str4: ticketTypeId || '',
+          custom_int1: String(quantity),
+        });
+
+        return `PayFast checkout ready.\nEvent: ${eventName}\nTickets: ${quantity}x ${ticketType}\nTotal: R${total.toFixed(2)}\n\nPay here: ${link}\n\nOnce PayFast pings us, your QR tickets will arrive in this chat.`;
+      }
+    }
+  }
+
+  // Fallback (no Supabase or order creation failed)
+  const fallbackLink = buildPayfastLink({
+    merchant_id: payfastMerchantId,
+    merchant_key: payfastMerchantKey,
+    amount: total.toFixed(2),
+    item_name: `${eventName} x${quantity}`,
+    return_url: payfastReturnUrl,
+    cancel_url: payfastCancelUrl,
+    notify_url: payfastNotifyUrl,
+    custom_str2: eventName,
+    custom_str3: ticketType,
+    custom_int1: String(quantity),
+  });
+
+  return `PayFast checkout ready.\nEvent: ${eventName}\nTickets: ${quantity}x ${ticketType}\nTotal: R${total.toFixed(2)}\n\nPay here: ${fallbackLink}\n\nTickets will be sent after payment.`;
 }
 
 async function checkTicketStatus(ticketId: string) {
@@ -238,7 +346,8 @@ export const processUserMessage = async (userMessage: string, userPhone: string)
           functionResult = await generatePaymentLink(
             args['eventName'] as string, 
             args['ticketType'] as string, 
-            args['quantity'] as number
+            args['quantity'] as number,
+            userPhone
           );
         } else if (name === 'checkTicketStatus') {
           functionResult = await checkTicketStatus(args['ticketId'] as string);
