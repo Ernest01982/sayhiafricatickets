@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Calendar, MapPin, Users, MoreHorizontal, Plus, X, Image as ImageIcon, Clock, Loader2 } from 'lucide-react';
 import { Event, EventStatus, TicketType } from '../types';
 import { supabase } from '../services/supabaseClient';
@@ -25,6 +25,9 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
   const [ticketTypes, setTicketTypes] = useState<Partial<TicketType>[]>([
     { name: 'General Admission', price: 0, capacity: 100 }
   ]);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     fetchEvents();
@@ -84,6 +87,7 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
   const handleCreateEvent = async () => {
     setIsLoading(true);
     try {
+        let uploadedImageUrl: string | null = null;
         let promoterId = null;
         const { data: { user } } = await supabase.auth.getUser();
         
@@ -91,6 +95,22 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
             promoterId = user.id;
         } else {
             throw new Error("You must be logged in to create an event.");
+        }
+
+        // Upload cover image if provided
+        if (coverFile) {
+            setIsUploadingImage(true);
+            const fileName = `events/${promoterId}-${Date.now()}-${coverFile.name}`;
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('event-covers')
+              .upload(fileName, coverFile, { upsert: false });
+            if (uploadError) {
+              console.warn('Image upload failed:', uploadError.message);
+            } else if (uploadData?.path) {
+              const { data: publicUrl } = supabase.storage.from('event-covers').getPublicUrl(uploadData.path);
+              uploadedImageUrl = publicUrl?.publicUrl || null;
+            }
+            setIsUploadingImage(false);
         }
 
         // Check if profile exists
@@ -122,7 +142,8 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
                 venue: newEvent.venue,
                 description: newEvent.description,
                 total_capacity: newEvent.totalCapacity,
-                status: 'DRAFT'
+                status: 'DRAFT',
+                image_url: uploadedImageUrl
             })
             .select()
             .single();
@@ -152,6 +173,7 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
         }
 
         setIsCreateModalOpen(false);
+        setCoverFile(null);
         fetchEvents(); // Refresh list
         alert("Event created successfully!");
 
@@ -427,9 +449,27 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
               <div className="space-y-4 pt-4 border-t border-slate-100">
                 <h3 className="text-sm font-bold uppercase text-slate-500 tracking-wider">Event Cover</h3>
                 <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center hover:bg-slate-50 transition-colors cursor-pointer">
-                  <ImageIcon className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                  <p className="text-sm text-slate-600 font-medium">Click to upload image</p>
-                  <p className="text-xs text-slate-400">PNG, JPG up to 5MB</p>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    ref={fileInputRef}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] || null;
+                      setCoverFile(file);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex flex-col items-center justify-center w-full"
+                  >
+                    <ImageIcon className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                    <p className="text-sm text-slate-600 font-medium">
+                      {coverFile ? coverFile.name : 'Click to upload image'}
+                    </p>
+                    <p className="text-xs text-slate-400">{isUploadingImage ? 'Uploading...' : 'PNG, JPG up to 5MB'}</p>
+                  </button>
                 </div>
               </div>
             </div>
