@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Calendar, MapPin, Users, MoreHorizontal, Plus, X, Image as ImageIcon, Clock, Loader2 } from 'lucide-react';
 import { Event, EventStatus, TicketType } from '../types';
-import { supabase, ensureDemoLogin } from '../services/supabaseClient';
+import { supabase } from '../services/supabaseClient';
 
 interface EventsProps {
   onSelectEvent: (eventId: string) => void;
@@ -36,12 +36,13 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
 
   const fetchEvents = async () => {
     try {
-        let { data: { user } } = await supabase.auth.getUser();
+        const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
-            const demo = await ensureDemoLogin();
-            user = demo.user;
+            console.warn('No user session; please log in to view your events.');
+            setEvents([]);
+            setIsLoading(false);
+            return;
         }
-        if (!user) return;
 
         // FILTER: Only fetch events belonging to the current promoter
         const { data, error } = await supabase
@@ -93,17 +94,9 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
     setIsLoading(true);
     try {
         let uploadedImageUrl: string | null = null;
-        let promoterId = null;
-        let { data: { user } } = await supabase.auth.getUser();
-        
-        if (user) {
-            promoterId = user.id;
-        } else {
-            const demo = await ensureDemoLogin();
-            if (!demo.user) throw new Error("You must be logged in to create an event.");
-            promoterId = demo.user.id;
-            user = demo.user;
-        }
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("You must be logged in to create an event.");
+        const promoterId = user.id;
 
         // Upload cover image if provided
         if (coverFile) {
