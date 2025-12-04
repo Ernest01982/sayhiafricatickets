@@ -8,7 +8,20 @@ const normalizeBaseUrl = () => {
   return 'http://localhost:3000';
 };
 
+const normalizeEdgeUrl = () => {
+  const explicit = import.meta.env.VITE_EDGE_FUNCTION_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, '');
+
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+  if (!supabaseUrl) return null;
+  // Supabase functions live at *.functions.supabase.co
+  const fnBase = supabaseUrl.replace('.supabase.co', '.functions.supabase.co');
+  return `${fnBase}/whatsapp-sim`;
+};
+
 const API_BASE_URL = normalizeBaseUrl();
+const EDGE_FUNCTION_URL = normalizeEdgeUrl();
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
 const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY?.trim();
 const canUseGemini = Boolean(geminiApiKey);
 const BACKEND_TIMEOUT_MS = 15000;
@@ -69,6 +82,28 @@ const generateWithGemini = async (apiKey: string, userMessage: string): Promise<
 export const processUserMessage = async (userMessage: string): Promise<string> => {
   if (!userMessage.trim()) {
     return '';
+  }
+
+  // Preferred: hit Supabase Edge Function to keep secrets server-side.
+  if (EDGE_FUNCTION_URL && supabaseAnonKey) {
+    try {
+      const resp = await fetch(EDGE_FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${supabaseAnonKey}`,
+        },
+        body: JSON.stringify({ message: userMessage }),
+      });
+      if (!resp.ok) {
+        const err = await resp.text();
+        throw new Error(`Function error (${resp.status}): ${err}`);
+      }
+      const data = await resp.json();
+      if (data?.response) return data.response as string;
+    } catch (fnError) {
+      console.error('Edge function failed, falling back:', fnError);
+    }
   }
 
   // Try hitting Gemini directly to simulate bot responses inside the admin console.
