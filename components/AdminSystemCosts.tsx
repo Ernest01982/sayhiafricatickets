@@ -43,7 +43,7 @@ export const AdminSystemCosts: React.FC = () => {
         />
       </div>
 
-      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm min-w-0">
         <h3 className="text-lg font-semibold text-slate-900 mb-4">Cost Analysis (Daily)</h3>
         <div className="h-80 w-full">
           <ResponsiveContainer width="100%" height="100%">

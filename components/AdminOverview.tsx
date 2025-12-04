@@ -50,7 +50,7 @@ export const AdminOverview: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Profit vs Costs */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm min-w-0">
           <h3 className="text-lg font-semibold text-slate-900 mb-4">Service Fees vs. Tech Costs</h3>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -77,7 +77,7 @@ export const AdminOverview: React.FC = () => {
         </div>
 
         {/* Pending Payouts */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col">
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col min-w-0">
           <h3 className="text-lg font-semibold text-slate-900 mb-4">Pending Promoter Payouts</h3>
           <div className="overflow-y-auto flex-1">
             <table className="w-full text-sm text-left">

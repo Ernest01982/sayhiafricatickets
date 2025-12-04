@@ -136,7 +136,7 @@ export const DashboardPromoter: React.FC = () => {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Revenue Chart */}
-        <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+        <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm min-w-0">
           <h3 className="text-lg font-semibold text-slate-900 mb-4">Revenue Trends</h3>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -155,7 +155,7 @@ export const DashboardPromoter: React.FC = () => {
         </div>
 
         {/* Ticket Breakdown - Mock Data for Visual */}
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm min-w-0">
           <h3 className="text-lg font-semibold text-slate-900 mb-4">Sales by Ticket Type</h3>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -177,7 +177,7 @@ export const DashboardPromoter: React.FC = () => {
       </div>
 
       {/* Recent Activity Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden min-w-0">
         <div className="px-6 py-4 border-b border-slate-100">
           <h3 className="text-lg font-semibold text-slate-900">Recent Orders</h3>
         </div>

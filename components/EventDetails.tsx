@@ -308,7 +308,7 @@ export const EventDetails: React.FC<EventDetailsProps> = ({ eventId, onBack, onL
                  </div>
 
                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm min-w-0">
                         <h3 className="text-lg font-semibold text-slate-900 mb-4">Sales by Ticket Type</h3>
                         <div className="h-64">
                             <ResponsiveContainer width="100%" height="100%">
@@ -327,7 +327,7 @@ export const EventDetails: React.FC<EventDetailsProps> = ({ eventId, onBack, onL
         )}
 
         {activeTab === 'orders' && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col min-w-0">
                 <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between gap-4">
                     <div className="relative max-w-sm w-full">
                         <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
@@ -378,7 +378,7 @@ export const EventDetails: React.FC<EventDetailsProps> = ({ eventId, onBack, onL
         )}
 
         {activeTab === 'tickets' && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col min-w-0">
                  <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between gap-4">
                     <div className="flex gap-2">
                         {/* Export Button with Dropdown */}

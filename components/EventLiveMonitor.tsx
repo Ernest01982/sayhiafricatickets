@@ -121,10 +121,10 @@ export const EventLiveMonitor: React.FC<EventLiveMonitorProps> = ({ eventId, onB
       </div>
 
       {/* Charts & Logs Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[500px]">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[500px] min-w-0">
         
         {/* Chart */}
-        <div className="lg:col-span-2 bg-slate-900 rounded-xl border border-slate-800 p-6">
+        <div className="lg:col-span-2 bg-slate-900 rounded-xl border border-slate-800 p-6 min-w-0">
           <h3 className="text-lg font-bold text-white mb-6">Ingress Flow (Last 2 Hours)</h3>
           <div className="h-[380px] w-full">
             <ResponsiveContainer width="100%" height="100%">
