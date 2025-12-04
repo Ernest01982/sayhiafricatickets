@@ -93,7 +93,7 @@ export const processUserMessage = async (userMessage: string): Promise<string> =
           'Content-Type': 'application/json',
           Authorization: `Bearer ${supabaseAnonKey}`,
         },
-        body: JSON.stringify({ message: userMessage }),
+        body: JSON.stringify({ message: userMessage, phone: 'simulator' }),
       });
       if (!resp.ok) {
         const err = await resp.text();

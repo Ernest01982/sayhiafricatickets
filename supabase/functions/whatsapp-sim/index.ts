@@ -2,6 +2,14 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 type TicketTypeRow = { id: string; name: string; price: number };
+type SessionState = {
+  step: "list" | "ticket" | "quantity" | "details";
+  event?: { id: string; title: string; ticket_types: TicketTypeRow[] };
+  ticketType?: TicketTypeRow | null;
+  quantity?: number | null;
+  name?: string | null;
+  email?: string | null;
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -24,6 +32,7 @@ const payfastNotifyUrl = Deno.env.get("PAYFAST_NOTIFY_URL") || "https://illeefvn
 const frontendBaseUrl = Deno.env.get("FRONTEND_URL") || "https://sayhiafricatickets.netlify.app";
 
 const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+const sessions = new Map<string, SessionState>();
 
 const readJson = async (req: Request) => {
   try {
@@ -117,7 +126,10 @@ const formatEvents = (events: Awaited<ReturnType<typeof getEvents>>) =>
     .join("\n");
 
 const buildReply = (args: { events: Awaited<ReturnType<typeof getEvents>>; message: string; phone?: string }) => {
-  const { events, message } = args;
+  const { events, message, phone } = args;
+  const sessionKey = phone || "default";
+  const current = sessions.get(sessionKey);
+
   const lower = message.toLowerCase();
   const ticketMatch = message.match(/(?:ticket|qr|id)[^a-zA-Z0-9]?[:#]?\s*([A-Za-z0-9-]{6,})/i);
   const qtyMatches = message.match(/\d+/g) || [];
@@ -134,8 +146,47 @@ const buildReply = (args: { events: Awaited<ReturnType<typeof getEvents>>; messa
     return { type: "ticket-check", ticketId: ticketMatch[1] };
   }
 
-  if (!events.length || lower.includes("hi") || lower.includes("event") || lower.includes("ticket")) {
-    return { type: "list", body: `Here are events you can book:\n${formatEvents(events)}\n\nReply with the event number to continue.` };
+  // Reset on greeting or if no events
+  if (!events.length || lower.includes("hi") || lower.includes("hello")) {
+    sessions.set(sessionKey, { step: "list" });
+    return { type: "list", body: `Here are events you can book:\n${formatEvents(events)}\n\nReply with the event number to continue.`, sessionKey };
+  }
+
+  // If we're expecting a ticket type/quantity/details, use session context
+  if (current?.event) {
+    // If we are at details step, try to capture name/email
+    if (current.step === "details") {
+      const nameCandidate = message
+        .replace(emailMatch ? emailMatch[0] : "", "")
+        .replace(/\d+/g, "")
+        .trim();
+      const updated: SessionState = {
+        ...current,
+        name: nameCandidate && nameCandidate.length > 2 ? nameCandidate : current.name || null,
+        email: emailMatch ? emailMatch[0] : current.email || null,
+      };
+      sessions.set(sessionKey, updated);
+      return { type: "flow", ...updated, sessionKey };
+    }
+
+    // If we are at quantity step, capture quantity
+    if (current.step === "quantity" && !Number.isNaN(quantity)) {
+      const updated: SessionState = { ...current, quantity, step: "details" };
+      sessions.set(sessionKey, updated);
+      return { type: "flow", ...updated, sessionKey };
+    }
+
+    // If we are at ticket step, capture ticket type selection
+    if (current.step === "ticket") {
+      const idx = !Number.isNaN(eventNumber) ? eventNumber - 1 : -1;
+      const types = Array.isArray(current.event.ticket_types) ? current.event.ticket_types : [];
+      const picked = idx >= 0 && types[idx] ? types[idx] : (types.find((t) => lower.includes(t.name.toLowerCase())) || null);
+      if (picked) {
+        const updated: SessionState = { ...current, ticketType: picked, step: "quantity" };
+        sessions.set(sessionKey, updated);
+        return { type: "flow", ...updated, sessionKey };
+      }
+    }
   }
 
   let selected = events[0];
@@ -154,13 +205,21 @@ const buildReply = (args: { events: Awaited<ReturnType<typeof getEvents>>; messa
     ticketNames.find((n) => lower.includes(n)) ||
     (typeIndex >= 0 && ticketNames[typeIndex] ? ticketNames[typeIndex] : null);
 
-  return {
-    type: "flow",
+  const initial: SessionState = {
+    step: matchedType ? "quantity" : "ticket",
     event: selected,
     ticketType: matchedType,
     quantity: Number.isNaN(quantity) ? null : quantity,
     email: emailMatch ? emailMatch[0] : null,
     name: nameCandidate && nameCandidate.length > 2 ? nameCandidate : null,
+  };
+
+  sessions.set(sessionKey, initial);
+
+  return {
+    type: "flow",
+    ...initial,
+    sessionKey,
   };
 };
 
@@ -253,6 +312,8 @@ serve(async (req) => {
       const payment = await generatePaymentLink(event.title, intent.ticketType, intent.quantity, phone, intent.name, intent.email);
       const baseReply = `Almost there! ${event.title}\n${intent.ticketType} x${intent.quantity}\nTotal: R${payment.total.toFixed(2)}\nPay here: ${payment.link}\nAfter payment, QR tickets and invoice will be sent here.`;
       const flavoured = await summarize(`Rewrite for WhatsApp in 2 short lines, friendly and clear:\n${baseReply}`);
+      // Reset session after payment link is sent
+      if (intent.sessionKey) sessions.delete(intent.sessionKey);
       return ok({ response: flavoured || baseReply });
     }
 
