@@ -105,10 +105,14 @@ export const Events: React.FC<EventsProps> = ({ onSelectEvent }) => {
               .from('event-covers')
               .upload(fileName, coverFile, { upsert: false });
             if (uploadError) {
-              console.warn('Image upload failed:', uploadError.message);
-            } else if (uploadData?.path) {
+              throw new Error(`Image upload failed: ${uploadError.message}`);
+            }
+            if (uploadData?.path) {
               const { data: publicUrl } = supabase.storage.from('event-covers').getPublicUrl(uploadData.path);
-              uploadedImageUrl = publicUrl?.publicUrl || null;
+              if (!publicUrl?.publicUrl) {
+                throw new Error('Image upload succeeded but no public URL returned. Please ensure the "event-covers" bucket is public.');
+              }
+              uploadedImageUrl = publicUrl.publicUrl;
             }
             setIsUploadingImage(false);
         }
